@@ -68,6 +68,70 @@ def test_message_id_gets_msgid_token_not_email_token():
     assert token("email", "abc123@example.com") not in result
 
 
+def test_rfc3339_syslog_hostname_is_anonymized():
+    anonymizer = MailLogAnonymizer(KEY)
+    original = "2026-05-17T10:12:01+00:00 mx1.example.org postfix/smtpd[1234]: connect\n"
+
+    expected = (
+        f"2026-05-17T10:12:01+00:00 {token('host', 'mx1.example.org')} "
+        "postfix/smtpd[1234]: connect\n"
+    )
+
+    assert anonymizer.anonymize_line(original) == expected
+
+
+def test_rfc3339_fractional_syslog_hostname_is_anonymized_with_existing_tokens():
+    anonymizer = MailLogAnonymizer(KEY)
+    original = (
+        "2026-05-10T00:46:46.249924+00:00 s3 "
+        "postfix/submissions/smtpd[1058622]: connect from "
+        "host_ed7133a1ab3a[ip_9f565312a970]\n"
+    )
+
+    expected = (
+        f"2026-05-10T00:46:46.249924+00:00 {token('host', 's3')} "
+        "postfix/submissions/smtpd[1058622]: connect from "
+        "host_ed7133a1ab3a[ip_9f565312a970]\n"
+    )
+
+    assert anonymizer.anonymize_line(original) == expected
+
+
+def test_rfc3339_fractional_warning_hostname_is_anonymized_with_existing_tokens():
+    anonymizer = MailLogAnonymizer(KEY)
+    original = (
+        "2026-05-10T00:46:48.486489+00:00 s3 "
+        "postfix/submissions/smtpd[1058622]: warning: "
+        "unknown[ip_9f565312a970]: SASL LOGIN authentication failed: "
+        "(reason unavailable), sasl_username=email_8ad1f308411e\n"
+    )
+
+    expected = (
+        f"2026-05-10T00:46:48.486489+00:00 {token('host', 's3')} "
+        "postfix/submissions/smtpd[1058622]: warning: "
+        "unknown[ip_9f565312a970]: SASL LOGIN authentication failed: "
+        "(reason unavailable), sasl_username=email_8ad1f308411e\n"
+    )
+
+    assert anonymizer.anonymize_line(original) == expected
+
+
+def test_postfix_reject_from_hostname_is_anonymized():
+    anonymizer = MailLogAnonymizer(KEY)
+    original = (
+        "May 17 10:12:08 s3 postfix/smtpd[1234]: NOQUEUE: reject: RCPT "
+        "from mail.example.com[1.2.3.4]: 554 5.7.1 blocked; "
+        "from=<bad@example.com> to=<user@example.net> helo=<mail.example.com>\n"
+    )
+
+    result = anonymizer.anonymize_line(original)
+
+    assert "mail.example.com" not in result
+    assert "1.2.3.4" not in result
+    assert f"from {token('host', 'mail.example.com')}[{token('ip', '1.2.3.4')}]" in result
+    assert f"helo=<{token('host', 'mail.example.com')}>" in result
+
+
 def test_preserve_email_domain_mode():
     anonymizer = MailLogAnonymizer(KEY, preserve_email_domain=True)
 

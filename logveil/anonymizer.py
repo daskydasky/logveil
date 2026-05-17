@@ -17,7 +17,11 @@ class MailLogAnonymizer:
     """Anonymize sensitive values in Postfix/Dovecot/Rspamd style log lines."""
 
     SYSLOG_PREFIX_RE = re.compile(
-        r"^(?P<prefix>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+)"
+        r"^(?P<prefix>(?:"
+        r"[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
+        r"|"
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
+        r")\s+)"
         r"(?P<host>\S+)"
         r"(?P<suffix>\s+)"
     )
@@ -33,6 +37,11 @@ class MailLogAnonymizer:
     )
     CONNECT_FROM_RE = re.compile(
         r"(?P<prefix>\bconnect from\s+)"
+        r"(?P<host>[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)"
+        r"\[(?P<ip>[^\]]+)\]"
+    )
+    FROM_BRACKET_HOST_RE = re.compile(
+        r"(?P<prefix>\bfrom\s+)"
         r"(?P<host>[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)"
         r"\[(?P<ip>[^\]]+)\]"
     )
@@ -69,6 +78,7 @@ class MailLogAnonymizer:
         line = self.SASL_USERNAME_RE.sub(self._replace_sasl_username, line)
         line = self.BRACKET_HOST_RE.sub(self._replace_bracket_host, line)
         line = self.CONNECT_FROM_RE.sub(self._replace_connect_from, line)
+        line = self.FROM_BRACKET_HOST_RE.sub(self._replace_from_bracket_host, line)
         line = self.HELO_RE.sub(self._replace_helo, line)
         line = self.EMAIL_RE.sub(self._replace_email_match, line)
         line = self.IPV4_RE.sub(self._replace_ipv4_match, line)
@@ -115,6 +125,11 @@ class MailLogAnonymizer:
         return f"{match.group('prefix')}{host}[{ip}]"
 
     def _replace_connect_from(self, match: Match[str]) -> str:
+        host = self._host_token(match.group("host"))
+        ip = self._ip_token_if_valid(match.group("ip"))
+        return f"{match.group('prefix')}{host}[{ip}]"
+
+    def _replace_from_bracket_host(self, match: Match[str]) -> str:
         host = self._host_token(match.group("host"))
         ip = self._ip_token_if_valid(match.group("ip"))
         return f"{match.group('prefix')}{host}[{ip}]"
